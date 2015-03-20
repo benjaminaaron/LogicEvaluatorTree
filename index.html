@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="de">
+	<head>
+		<title>logical tree evaluator</title>
+		
+		<script type="text/javascript" src="js/jquery-2.1.1.min.js"></script>
+		<script type="text/javascript" src="js/springy.js"></script>
+		<script type="text/javascript" src="js/springyui.js"></script>
+		
+		<style>
+			.ui-widget{
+				font-size: 0.8em !important;
+			}
+		</style>
+
+		<script>
+
+/*			var blogPostA = {
+				tags : ["eumel", "dings", "lala", "foo", "nix", "yay"]
+			};
+			var blogPostB = {
+				tags : ["eumel", "yay", "lala", "dings"]
+			};
+			var blogPostC = {
+				tags : ["hat", "nix", "richtiges"]
+			};
+*/
+			var logicTypes = {
+			    AND : 'AND',
+			    OR : 'OR'
+			};
+
+			var nodeTypes = {
+				ROOT : 'ROOT',
+				LOGIC : 'LOGIC',
+				LEAF : 'LEAF'
+			};
+
+			var nodes = new Array();
+
+			function Node(type) { 
+				this.id;
+				this.type = type;
+				this.children = new Array();
+				this.parent = null;
+				this.logicType = null;
+
+				this.evaluateEntry = function(entry){
+					console.log('initializing evaluation for entry ' + entry.name);					
+					var postEvaluatesToTrue = this.children[0].evaluate(entry);
+					console.log(postEvaluatesToTrue);
+					return postEvaluatesToTrue;
+				};
+
+				this.evaluate = function(entry){
+					/*console.log('evaluate func in node: [' + this.id + ']  ' + this.type + ' / ' + this.logOpType + ' / ' + this.children.length);*/
+					if(this.type == nodeTypes.LEAF){
+						var isInArray = $.inArray(this.keyword, entry.tags) >= 0;
+						/*console.log('      checking if ' + this.keyword + ' is in: '); console.log(entry.tags);
+						console.log('  returning [' + isInArray + '] from leaf');*/
+						return isInArray;
+					} else {
+						var allTrue = true;
+						var atLeastOneTrue = false;
+						for(var i in this.children){
+							var child = this.children[i];
+							/*console.log('looking at child: [' + child.id + ']  ' + child.type + ' / ' + child.logOpType + ' / ' + child.children.length);*/
+							if(child.evaluate(entry) == true){
+								atLeastOneTrue = true;
+							} else {
+								allTrue = false;
+							}
+							/*console.log('  atLeastOneTrue: ' + atLeastOneTrue + '  /  allTrue: ' + allTrue);*/
+						};
+						switch(this.logicType) {
+							case logicTypes.AND:
+								/*console.log('returning allTrue [' + allTrue + '] because of logOpType AND');*/
+								return allTrue;
+							   	break;
+							case logicTypes.OR:
+								/*console.log('returning atLeastOneTrue [' + atLeastOneTrue + '] because of logOpType OR');*/
+							   	return atLeastOneTrue;
+							   	break;
+						}
+					}
+				};
+			};
+
+			Node.prototype.addChild = function(child){
+				this.children.push(child);
+				child.parent = this;
+			};
+
+			function Leaf(keyword){
+				/*this.taxonomyType = taxonomyType;*/
+				this.keyword = keyword;
+			}
+			Leaf.prototype = new Node(nodeTypes.LEAF);
+
+		    function NodeStack(){
+		    	this.stack = [];
+		    	this.push = function(node){
+		    		this.stack.push(node);
+		    		node.id = nodes.length;
+		    		nodes.push(node);
+		    	};
+		    	this.pop = function(){
+		    		this.stack.pop();
+		    	};
+		    	this.top = function(){
+		    		return this.stack[this.stack.length - 1];
+		    	};
+		    };
+
+		    var entry = function(name){
+		    	this.name = name;
+		    	this.tags = [];
+		    	this.addTag = function(tag){
+		    		this.tags.push(tag);
+		    	}
+		    }
+
+		    function evalEntries(){
+		    	var entriesRows = $('#entries').val().split('\n');
+		    	var entries = [];
+	    		for(var i=0; i < entriesRows.length; i++){
+		    		var entryRow = entriesRows[i];		    		
+		    		var newEntry = new entry(entryRow.split(' ')[0]); 
+		    		var strTags = entryRow.split(' ')[1].split(',');
+		    		for(var j=0; j < strTags.length; j++){
+		    		 	newEntry.addTag(strTags[j]);
+		    		}
+		    		entries.push(newEntry);
+		    	}
+		    	console.log('entries:');
+		    	console.log(entries);
+
+		    	var queryStr = $('#queryGrammarField').val();				
+				var queryArr = queryStr.split(' ');
+				console.log('queryArr:');
+				console.log(queryArr);
+
+				var stack = new NodeStack();
+
+				var root = new Node(nodeTypes.ROOT);
+				stack.push(root);
+
+				for(var i in queryArr){
+					var part = queryArr[i];
+					//console.log(part);
+					switch(part) {
+						case '(':
+					    	var node = new Node(nodeTypes.LOGIC);
+					    	stack.top().addChild(node);
+					    	stack.push(node);
+					    	break;
+					    case ')':
+							stack.pop();
+					    	break;
+					    case 'AND':
+					    	stack.top().logicType = logicTypes.AND; /*catch error & implement default behaviour if next one would be different */
+					    	break;
+					    case 'OR':
+					    	stack.top().logicType = logicTypes.OR;
+					    	break;
+					    default:
+					    	var leaf = new Leaf(part);
+					    	stack.top().addChild(leaf);
+					    	leaf.id = nodes.length;
+					    	nodes.push(leaf);
+					}
+				};
+
+				/*TODO shortcut if just one search-term*/
+
+				var resultText = '';
+		    	for(var i=0; i < entries.length; i++){
+		    		var evalResult = root.evaluateEntry(entries[i]);
+					resultText = resultText + entries[i].name + ': ' + evalResult + '\n';
+		    	}
+		    	$('#results').val(resultText);
+
+		    	doSpringyGraph();
+		    }
+
+
+			function doSpringyGraph(){		
+				var graph = new Springy.Graph();
+				for(var i in nodes){
+					var node = nodes[i];
+					console.log(node);
+
+					switch (node.type){
+						case nodeTypes.ROOT:
+							node.graphNode = graph.newNode({label: 'ROOT'});
+							break;
+						case nodeTypes.LOGIC:
+							node.graphNode = graph.newNode({label: node.logicType});
+							break;
+						case nodeTypes.LEAF:
+							node.graphNode = graph.newNode({label: node.keyword});
+							break;
+					}
+				};
+				for(var i in nodes){
+					var node = nodes[i];
+					for(var j in node.children){
+						var child = node.children[j];
+						graph.newEdge(node.graphNode, child.graphNode);
+					};
+				};
+				$('#my_canvas').springy({ graph: graph });
+			};
+
+			function reset(){
+				//$('#entries').val('');
+				$('#results').val('');
+				location.reload();
+			}
+	
+		</script>
+	</head>
+	<body>
+
+	<table>
+		<tr>
+			<td>
+				<textarea id="entries" rows="4" cols="60">
+blogPostA tag2,tag1,tag5,tag3,tag4,tag6
+blogPostB tag2,tag6,tag5,tag1
+blogPostC tag7,tag4,tag8</textarea>
+				<br><br>
+				<input type="text" id="queryGrammarField" value="( ( tag1 OR tag2 ) AND ( tag3 OR tag4 OR ( tag5 AND tag6 ) ) )" size="80" cass="">	
+				<br><br>
+				<input type="button" value="evaluate" onclick="javascript:evalEntries()">
+				<input type="button" value="reset" onclick="javascript:reset()">
+				<br><br>
+				<textarea id="results" rows="4" cols="60"></textarea>		
+			</td>
+			<td>
+				<canvas id="my_canvas" width="600" height="400" />
+			</td>
+		</tr>
+	</table>
+		
+	</body>
+</html>
+
+
+<!-- PARKING LOT
+
+		<script type="text/javascript" src="jquery-ui-1.11.1.custom/jquery-ui.min.js"></script>
+		<script type="text/javascript" src="aehlke-tag-it-1d84585/js/tag-it.min.js"></script>
+		<script type="text/javascript" src="cross-domain-ajax/jquery.xdomainajax.js"></script>
+		<link href="jquery-ui-1.11.1.custom/jquery-ui.min.css" type="text/css" rel="stylesheet"/>
+		<link href="aehlke-tag-it-1d84585/css/jquery.tagit.css" type="text/css" rel="stylesheet"/>
+		<link href="aehlke-tag-it-1d84585/css/tagit.ui-zendesk.css" type="text/css" rel="stylesheet"/>
+
+/*			$(document).ready(function() {
+				$('#tagsRadiobtn').click(function() {});	
+				$('#categoriesRadiobtn').click(function() {	
+					$("#myTags").tagit({
+					    availableTags: ["c++", "java", "php", "javascript", "ruby", "python", "c"]
+					});
+				});
+			});*/
+
+		<table>
+		<tr><td>
+		<ul id="myTags"></ul>
+		</td></tr></table>
+
+
+		<input type="radio" name="taxonomyRadiobtnGroup" id="tagsRadiobtn" checked="checked"> tags
+		<input type="radio" name="taxonomyRadiobtnGroup" id="categoriesRadiobtn"> categories
+
+/*			function testFunc(){		
+				var tags = $("#myTags").tagit("assignedTags");
+				console.log(tags);
+
+				var AND_OR = '+';
+
+				var url = 'http://benjaminsplayground.wordpress.com/tag/';
+				for(var i = 0; i < tags.length; i++){
+					url = url + tags[i] + AND_OR;
+				};
+				url = url.substring(0, url.length - 1);
+
+				console.log('url: ' + url);
+
+				var win = window.open(url, '_blank');
+		    	win.focus();
+			};
+
+
+			function fetchTags(){
+				var tags =	fetchFromAPI('get_tag_index');
+			};
+
+			function fetchFromAPI(command){	
+				jQuery.ajax({
+		 			url: 'http://ec2-54-194-201-54.eu-west-1.compute.amazonaws.com/api/' + command,
+		 			type: "GET",
+		 			success: function(returnVal) {
+		 				var domStr = returnVal.responseText;
+
+		 				var threeChars = '';
+		 				var k = 0;
+		 				while(threeChars != '<p>'){
+		 					threeChars = domStr.substring(k, k + 3);
+		 					k++;
+		 				}
+		 				var jsonStrPart = domStr.substring(k + 2, domStr.length - 22);
+
+		 				console.log(jsonStrPart);
+
+		 				var jsonStrPartFormatted = '';
+						for(var i = 0; i < jsonStrPart.length; i++){
+							if(jsonStrPart.charCodeAt(i) == '10'){
+								jsonStrPartFormatted += '#';
+							} else {
+								jsonStrPartFormatted += jsonStrPart.charAt(i);
+							}
+						};
+
+						console.log(jsonStrPartFormatted);
+
+		 				for(var i = 1500; i < 2000; i++){
+		 					console.log(i + ': ' + jsonStrPartFormatted.charAt(i) + '  > ' + jsonStrPartFormatted.charCodeAt(i));
+		 				};
+
+						var jsonObj = JSON.parse(jsonStrPartFormatted);
+		 				console.log(jsonObj);
+		 			}
+
+		 		});
+
+
+				jQuery.ajax({
+		 			url: 'http://ec2-54-194-201-54.eu-west-1.compute.amazonaws.com/api/' + command,
+		 			type: "GET",
+		 			success: function(returnVal) {
+		 				console.log(returnVal)	 				
+		 				var xmlDOM = jQuery.parseXML(returnVal.responseText);
+		 				var apiJsonAsXML = xmlDOM.getElementsByTagName('body')[0].childNodes[0].nodeValue;
+		 				console.log(apiJsonAsXML);
+		 				//var jsonObj = JSON.parse(apiJsonAsXML);
+		 				//console.log(jsonObj);
+		 				//return jsonObj;
+		 			}
+		 		});
+			};
+
+			function getPosts(){
+
+				var jsonObj = fetchFromAPI('get_posts');
+
+			};
+
+			function wpAjaxText(){
+				jQuery.ajax({
+		 			url: 'http://ec2-54-194-201-54.eu-west-1.compute.amazonaws.com/api/get_tag_index/',
+		 			type: "GET",
+		 			success: function(returnVal) {
+		 				var xmlDOM = jQuery.parseXML(returnVal.responseText);
+		 				var apiJsonAsXML = xmlDOM.getElementsByTagName('p')[0].childNodes[0].nodeValue;
+		 				console.log(apiJsonAsXML);
+		 				var apiJSON = JSON.parse(apiJsonAsXML);
+		 				console.log(apiJSON);
+
+
+		 				var allTags = new Array();
+		 				for(var i = 0; i < apiJSON.tags.length; i++){
+		 					allTags.push(apiJSON.tags[i].title);
+		 				};
+
+		 				$("#myTags").tagit({
+		    				availableTags: allTags,    				
+		    				showAutocompleteOnFocus: true,
+		    				autocomplete: {delay: 60},
+							
+						    afterTagAdded: function(event, ui) {				        
+						        var isInAllTags = false;
+						        for(var i = 0; i < allTags.length; i++){
+						        	if(allTags[i] == ui.tagLabel){
+						        		isInAllTags = true;
+						        	}
+						        };
+						        if(!isInAllTags){
+						        	$(this).tagit("removeTagByLabel", ui.tagLabel);
+						    	}
+						    }
+
+
+
+						});	
+
+		 			}
+		 		});
+			} */
+-->
